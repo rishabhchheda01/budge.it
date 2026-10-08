@@ -1,0 +1,13 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- The window background matches LightBackground in ui/theme/Theme.kt (no white flash on launch). -->
+    <style name="Theme.BudgetApp" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#F4F4F2</item>
+    </style>
+
+    <!-- See-through window, used by the widget's quick-add card so you see your home screen behind it. -->
+    <style name="Theme.BudgetApp.Translucent" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
+</resources>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What the widget looks like for a split second before it has drawn. Matches the real widget:
+     sand color (WidgetBackground in Theme.kt) and 24dp corners (cornerRadius in BudgetWidget.kt). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#ECD9BA" />
+    <corners android:radius="24dp" />
+</shape>

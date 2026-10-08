@@ -1,0 +1,13 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Dark version of the app's window theme, so there is no white flash when opening in dark mode. -->
+    <!-- The window background matches DarkBackground in ui/theme/Theme.kt. -->
+    <style name="Theme.BudgetApp" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#14161A</item>
+    </style>
+
+    <style name="Theme.BudgetApp.Translucent" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
+</resources>

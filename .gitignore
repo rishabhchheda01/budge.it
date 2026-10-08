@@ -1,0 +1,19 @@
+*.iml
+.gradle/
+/local.properties
+.idea/
+.DS_Store
+/build
+/app/build
+/captures
+.externalNativeBuild
+.cxx
+
+# Machine-specific and editor folders
+.kotlin/
+.vscode/
+
+# Signing keys must never be committed (ours live outside the project, this is a safety net)
+*.jks
+*.keystore
+keystore.properties
