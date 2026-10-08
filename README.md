@@ -1,6 +1,6 @@
 # budge.it
 
-A small, calm budget tracker for Android. Set a daily or weekly budget, log what you spend, and see
+A small budget tracker for Android. Set a daily or weekly budget, log what you spend, and see
 what is left **today** at a glance, right from a home-screen widget.
 
 Everything stays on your phone. There are no accounts, no internet access and no cloud backup.
