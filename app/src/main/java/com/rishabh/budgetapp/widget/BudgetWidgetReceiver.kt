@@ -1,45 +1,21 @@
 package com.rishabh.budgetapp.widget
 
-import android.appwidget.AppWidgetManager
 import android.content.Context
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 
 class BudgetWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = BudgetWidget()
 
-    // First widget added to the home screen: start the midnight refresh.
-    override fun onEnabled(context: Context) {
-        super.onEnabled(context)
-        scheduleInBackground(context)
-    }
-
-    // Last widget removed: stop it, so nothing wakes up for no reason.
+    // Last widget removed: stop the midnight alarm, so nothing wakes up for no reason.
     override fun onDisabled(context: Context) {
         super.onDisabled(context)
         MidnightRefresh.cancel(context)
     }
 
-    // Also re-arm on every widget update, in case the alarm was lost.
-    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        super.onUpdate(context, appWidgetManager, appWidgetIds)
-        scheduleInBackground(context)
-    }
-
-    // The alarm needs the saved rollover time, which is read off the main thread.
-    // goAsync keeps Android from stopping this receiver until that is done.
-    private fun scheduleInBackground(context: Context) {
-        val app = context.applicationContext
-        val pending = goAsync()
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                MidnightRefresh.schedule(app)
-            } finally {
-                pending.finish()
-            }
-        }
-    }
+    // NOTE: do not override onUpdate / onEnabled here to start the midnight alarm. Glance's own receiver already
+    // uses the one "keep this broadcast alive" handle (goAsync) that Android gives it while it draws the widget.
+    // Asking for a second handle returns null, and using it crashed the app before the widget was drawn, which
+    // left the widget empty until something else refreshed it. The alarm is started in BudgetWidget.provideGlance
+    // instead, which runs when the widget is added and on every update.
 }

@@ -10,4 +10,10 @@
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:backgroundDimEnabled">false</item>
     </style>
+
+    <!-- Not see-through to the app below, but shows your WALLPAPER behind it. Used by the widget color screen. -->
+    <style name="Theme.BudgetApp.Wallpaper" parent="android:Theme.Material.Wallpaper.NoTitleBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowShowWallpaper">true</item>
+    </style>
 </resources>

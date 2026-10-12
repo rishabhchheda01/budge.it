@@ -3,7 +3,6 @@ package com.rishabh.budgetapp
 import java.time.LocalDate
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Test
 
 class BudgetMathTest {
@@ -35,10 +34,23 @@ class BudgetMathTest {
     }
 
     @Test
-    fun pruneCutoffKeepsThisWeekAndLastWeek() {
-        // This week starts Sunday Oct 4, so we keep everything from Sunday Sep 27 on.
-        val expected = LocalDate.of(2026, 9, 27).atStartOfDay(utc).toInstant().toEpochMilli()
+    fun pruneCutoffKeepsOneMonth() {
+        // Today is Wednesday Oct 7, so we keep everything from the same date last month, Sep 7, on.
+        val expected = LocalDate.of(2026, 9, 7).atStartOfDay(utc).toInstant().toEpochMilli()
         assertEquals(expected, pruneCutoffMillis(wednesday, utc))
+    }
+
+    @Test
+    fun pruneCutoffUsesTheLastDayWhenLastMonthIsShorter() {
+        // Mar 31 has no matching date in February, so the cutoff is Feb 28 (2026 is not a leap year).
+        val expected = LocalDate.of(2026, 2, 28).atStartOfDay(utc).toInstant().toEpochMilli()
+        assertEquals(expected, pruneCutoffMillis(LocalDate.of(2026, 3, 31), utc))
+    }
+
+    @Test
+    fun pruneCutoffCrossesTheNewYear() {
+        val expected = LocalDate.of(2025, 12, 15).atStartOfDay(utc).toInstant().toEpochMilli()
+        assertEquals(expected, pruneCutoffMillis(LocalDate.of(2026, 1, 15), utc))
     }
 
     @Test
@@ -68,7 +80,7 @@ class BudgetMathTest {
         assertEquals(10.0, summary.spent, 0.001)
         assertEquals(7.5, summary.left, 0.001)
         assertEquals(10f / 17.5f, summary.progress, 0.001f)
-        assertEquals(60.0, summary.weeklyLeft!!, 0.001)
+        assertEquals(60.0, summary.weeklyLeft, 0.001)
         assertEquals(4, summary.daysLeft)
     }
 
@@ -78,8 +90,9 @@ class BudgetMathTest {
         assertEquals(20.0, summary.limit, 0.001)
         assertEquals(-10.0, summary.left, 0.001)
         assertEquals(1f, summary.progress, 0.001f)
-        assertNull(summary.weeklyLeft)
-        assertNull(summary.daysLeft)
+        // A daily budget has a weekly budget too: 20 x 7 = 140, of which 30 is spent.
+        assertEquals(110.0, summary.weeklyLeft, 0.001)
+        assertEquals(4, summary.daysLeft)
     }
 
     // The example: a 700 weekly budget.
@@ -91,7 +104,7 @@ class BudgetMathTest {
         assertEquals(100.0, after.limit, 0.001) // still 100 after spending 100
         assertEquals(100.0, before.left, 0.001)
         assertEquals(0.0, after.left, 0.001)    // but nothing is left today
-        assertEquals(600.0, after.weeklyLeft!!, 0.001)
+        assertEquals(600.0, after.weeklyLeft, 0.001)
     }
 
     @Test

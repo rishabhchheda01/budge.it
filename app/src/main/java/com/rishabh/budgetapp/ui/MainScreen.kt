@@ -6,6 +6,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -35,6 +36,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -89,9 +91,13 @@ import com.rishabh.budgetapp.ThemeMode
 import com.rishabh.budgetapp.budgetDate
 import com.rishabh.budgetapp.currencyFormat
 import com.rishabh.budgetapp.data.Transaction
+import com.rishabh.budgetapp.convertBudget
 import com.rishabh.budgetapp.ui.theme.KdamThmorPro
+import com.rishabh.budgetapp.ui.theme.WidgetBackground
 import com.rishabh.budgetapp.ui.theme.progressColor
 import kotlinx.coroutines.launch
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.text.NumberFormat
 import java.time.Instant
 import java.time.LocalDate
@@ -120,7 +126,10 @@ fun MainScreen(
     onThemeModeChange: (ThemeMode) -> Unit,
     onClearTransactions: () -> Unit,
     rollover: LocalTime = LocalTime.MIDNIGHT,
-    onRolloverChange: (LocalTime) -> Unit = {}
+    onRolloverChange: (LocalTime) -> Unit = {},
+    onSwitchBudgetPeriod: (BudgetPeriod, Double) -> Unit = { _, _ -> },
+    widgetColor: Color = WidgetBackground,
+    onEditWidgetColor: () -> Unit = {}
 ) {
     val focusManager = LocalFocusManager.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -132,6 +141,11 @@ fun MainScreen(
     var showSettings by rememberSaveable { mutableStateOf(false) }
     val inSettings = showSettings && isBudgetSet
     BackHandler(enabled = inSettings) { showSettings = false } // the phone's back button closes settings
+
+    // The Insights page (the weekly graph) works the same way: a true/false switch.
+    var showInsights by rememberSaveable { mutableStateOf(false) }
+    val inInsights = showInsights && isBudgetSet && !inSettings
+    BackHandler(enabled = inInsights) { showInsights = false }
 
     // Delete right away, then offer "Undo" for a few seconds.
     val deleteWithUndo: (Transaction) -> Unit = { transaction ->
@@ -150,7 +164,7 @@ fun MainScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
-            if (!inSettings) {
+            if (!inSettings && !inInsights) {
                 AddTransactionButton(
                     onClick = { showAddDialog = true },
                     modifier = Modifier
@@ -164,6 +178,7 @@ fun MainScreen(
         // MAIN keeps the logo and today's budget fixed; only the transactions list scrolls.
         val view = when {
             inSettings -> ScreenView.SETTINGS
+            inInsights -> ScreenView.INSIGHTS
             isBudgetSet -> ScreenView.MAIN
             else -> ScreenView.SETUP
         }
@@ -191,7 +206,8 @@ fun MainScreen(
                     BudgetHero(
                         budgetPeriod = budgetPeriod,
                         summary = summary,
-                        onOpenSettings = { showSettings = true }
+                        onOpenSettings = { showSettings = true },
+                        onOpenInsights = { showInsights = true }
                     )
                     // Scrolling part: takes all the remaining height.
                     TransactionsSection(
@@ -199,8 +215,43 @@ fun MainScreen(
                         onEdit = { editingTransaction = it },
                         onDelete = deleteWithUndo,
                         rollover = rollover,
-                        modifier = Modifier.weight(1f)
+                        // The 24.dp is the space between the progress bars and the list.
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(top = 24.dp)
                     )
+                }
+            } else if (current == ScreenView.SETTINGS) {
+                // The title and back arrow stay put; only the options below them scroll.
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                        .then(tapToDismissKeyboard)
+                        .padding(horizontal = 24.dp)
+                        .padding(top = 16.dp)
+                ) {
+                    SettingsHeader(onBack = { showSettings = false })
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState())
+                            .padding(top = 8.dp, bottom = 16.dp)
+                    ) {
+                        SettingsContent(
+                            budgetPeriod = budgetPeriod,
+                            budgetAmount = budgetAmount,
+                            onSwitchPeriod = onSwitchBudgetPeriod,
+                            onConfirmBudget = onConfirmBudget,
+                            themeMode = themeMode,
+                            onThemeModeChange = onThemeModeChange,
+                            onClearTransactions = onClearTransactions,
+                            rollover = rollover,
+                            onRolloverChange = onRolloverChange,
+                            widgetColor = widgetColor,
+                            onEditWidgetColor = onEditWidgetColor
+                        )
+                    }
                 }
             } else {
                 Column(
@@ -212,18 +263,13 @@ fun MainScreen(
                         .padding(horizontal = 24.dp, vertical = 16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    if (current == ScreenView.SETTINGS) {
-                        SettingsContent(
+                    if (current == ScreenView.INSIGHTS) {
+                        InsightsContent(
                             budgetPeriod = budgetPeriod,
                             budgetAmount = budgetAmount,
-                            onBudgetPeriodChange = onBudgetPeriodChange,
-                            onConfirmBudget = onConfirmBudget,
-                            themeMode = themeMode,
-                            onThemeModeChange = onThemeModeChange,
-                            onClearTransactions = onClearTransactions,
+                            transactions = transactions,
                             rollover = rollover,
-                            onRolloverChange = onRolloverChange,
-                            onBack = { showSettings = false }
+                            onBack = { showInsights = false }
                         )
                     } else {
                         AppLogo()
@@ -264,7 +310,7 @@ fun MainScreen(
     }
 }
 
-private enum class ScreenView { MAIN, SETTINGS, SETUP }
+private enum class ScreenView { MAIN, SETTINGS, INSIGHTS, SETUP }
 
 @Composable
 private fun AppLogo() {
@@ -311,6 +357,9 @@ private fun BudgetSetupForm(
 ) {
     // The text being typed lives here; the amount is only saved when "Set budget" is pressed.
     var amountText by remember(budgetAmount) { mutableStateOf(formatAmountForEditing(budgetAmount)) }
+    // The exact number behind the text after a Daily <-> Weekly switch (the text is rounded to cents).
+    // Typing clears it, so it is only used while the text is still what the switch put there.
+    var exactAmount by remember { mutableStateOf<Double?>(null) }
     val quietText = MaterialTheme.colorScheme.onSurfaceVariant
     val perLabel = if (budgetPeriod == BudgetPeriod.DAILY) "per day" else "per week"
 
@@ -338,14 +387,26 @@ private fun BudgetSetupForm(
         SegmentedToggle(
             options = listOf("Daily" to BudgetPeriod.DAILY, "Weekly" to BudgetPeriod.WEEKLY),
             selected = budgetPeriod,
-            onSelect = onBudgetPeriodChange
+            onSelect = { newPeriod ->
+                // Daily <-> Weekly: change the typed amount along with it (x7 or /7).
+                val typed = amountText.toDoubleOrNull()?.takeIf { it > 0 }
+                if (typed != null && newPeriod != budgetPeriod) {
+                    val converted = convertBudget(exactAmount ?: typed, budgetPeriod, newPeriod)
+                    exactAmount = converted
+                    amountText = formatAmountForEditing(converted)
+                }
+                onBudgetPeriodChange(newPeriod)
+            }
         )
 
         Spacer(modifier = Modifier.height(48.dp))
 
         AmountField(
             value = amountText,
-            onValueChange = { amountText = it }
+            onValueChange = {
+                amountText = it
+                exactAmount = null
+            }
         )
         HorizontalDivider(
             color = MaterialTheme.colorScheme.outline,
@@ -359,7 +420,11 @@ private fun BudgetSetupForm(
         Spacer(modifier = Modifier.height(48.dp))
 
         Button(
-            onClick = { amountText.toDoubleOrNull()?.let(onConfirmBudget) },
+            onClick = {
+                // Save the exact number from a switch if the text is still the one it produced.
+                val exact = exactAmount?.takeIf { formatAmountForEditing(it) == amountText }
+                (exact ?: amountText.toDoubleOrNull())?.let(onConfirmBudget)
+            },
             enabled = (amountText.toDoubleOrNull() ?: 0.0) > 0.0,
             shape = RoundedCornerShape(50),
             modifier = Modifier
@@ -438,19 +503,12 @@ internal fun AmountField(
 private fun BudgetHero(
     budgetPeriod: BudgetPeriod,
     summary: BudgetSummary,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onOpenInsights: () -> Unit
 ) {
     val currency = remember { currencyFormat() }
     val quietText = MaterialTheme.colorScheme.onSurfaceVariant
     val periodLabel = if (budgetPeriod == BudgetPeriod.DAILY) "DAILY BUDGET" else "TODAY'S BUDGET"
-    // Animating the progress makes the bar (and its color) glide when the numbers change.
-    // Change the 900 (milliseconds) to make the glide faster or slower.
-    val animatedProgress by animateFloatAsState(
-        targetValue = summary.progress,
-        animationSpec = tween(durationMillis = 900, easing = FastOutSlowInEasing),
-        label = "progress"
-    )
-
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -468,6 +526,15 @@ private fun BudgetHero(
                 color = quietText,
                 modifier = Modifier.weight(1f)
             )
+            // Magnifying glass: opens the Insights page (the weekly graph).
+            IconButton(onClick = onOpenInsights) {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = "Insights",
+                    tint = quietText,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
             IconButton(onClick = onOpenSettings) {
                 Icon(
                     imageVector = Icons.Default.Settings,
@@ -489,6 +556,44 @@ private fun BudgetHero(
         )
         Spacer(modifier = Modifier.height(32.dp))
 
+        // The daily bar on top, the weekly bar underneath. Both budget types show both bars (a daily
+        // budget's week is the daily budget x 7).
+        LabeledBar(
+            label = "left today",
+            detail = "${currency.format(summary.spent)} of ${currency.format(summary.limit)}",
+            progress = summary.progress
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        val dayWord = if (summary.daysLeft == 1) "day" else "days"
+        LabeledBar(
+            label = "left this week",
+            detail = "${currency.format(summary.weeklyLeft)} · ${summary.daysLeft} $dayWord left",
+            progress = summary.weeklyProgress
+        )
+    }
+}
+
+/**
+ * A progress bar with its label above it on the left (like "left today") and a small detail on the right.
+ * The bar's color glides green -> amber -> red as it fills.
+ */
+@Composable
+private fun LabeledBar(label: String, detail: String, progress: Float) {
+    val quietText = MaterialTheme.colorScheme.onSurfaceVariant
+    // Animating the progress makes the bar (and its color) glide when the numbers change.
+    // Change the 900 (milliseconds) to make the glide faster or slower.
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = tween(durationMillis = 900, easing = FastOutSlowInEasing),
+        label = "progress"
+    )
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.fillMaxWidth()) {
+            Text(text = label, fontSize = 13.sp, color = quietText, modifier = Modifier.weight(1f))
+            Text(text = detail, fontSize = 13.sp, color = quietText)
+        }
+        Spacer(modifier = Modifier.height(6.dp))
         LinearProgressIndicator(
             progress = { animatedProgress },
             color = progressColor(animatedProgress),
@@ -500,34 +605,15 @@ private fun BudgetHero(
                 .height(8.dp)
                 .clip(RoundedCornerShape(50))
         )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // How much of today's limit you have used.
-        Text(
-            text = "${currency.format(summary.spent)} of ${currency.format(summary.limit)} today",
-            fontSize = 15.sp,
-            color = quietText
-        )
-
-        // Weekly budgets also show what is left of the whole week.
-        if (summary.weeklyLeft != null && summary.daysLeft != null) {
-            val dayWord = if (summary.daysLeft == 1) "day" else "days"
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "${currency.format(summary.weeklyLeft)} left this week · ${summary.daysLeft} $dayWord left",
-                fontSize = 15.sp,
-                color = quietText
-            )
-        }
     }
 }
 
 /**
- * Every stored transaction (the last 2 weeks), newest first, grouped by day.
+ * Every stored transaction (the last month), newest first, grouped by day.
  * A LazyColumn is a scrolling list that only draws the rows on screen. animateItem() makes rows
  * slide, fade in and fade out when you add or delete one, instead of jumping.
  */
+@OptIn(ExperimentalFoundationApi::class) // stickyHeader (the pinned dates) is still marked experimental
 @Composable
 private fun TransactionsSection(
     transactions: List<Transaction>,
@@ -550,7 +636,9 @@ private fun TransactionsSection(
 
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(top = 24.dp, bottom = 16.dp)
+        // No padding at the top: the space above the list is outside it (see where it is placed), so the
+        // rows disappear a little below the progress bars instead of being cut off right against them.
+        contentPadding = PaddingValues(bottom = 16.dp)
     ) {
         if (transactions.isEmpty()) {
             item(key = "empty") {
@@ -567,16 +655,20 @@ private fun TransactionsSection(
             }
         }
         byDay.forEach { (date, dayTransactions) ->
+            // The date ("Today", "Yesterday", "Mon, Oct 5") stays pinned at the top of the list while you scroll
+            // through that day's rows, until the next date pushes it away. It needs a solid background, or the
+            // rows scrolling underneath it would show through the text.
             // "key" tells the list which row is which, so it can animate the right one.
-            item(key = "day-$date") {
+            stickyHeader(key = "day-$date") {
                 Text(
                     text = dayLabel(date, today).uppercase(),
                     fontSize = 12.sp,
                     letterSpacing = 1.5.sp,
                     color = quietText,
                     modifier = Modifier
-                        .animateItem()
-                        .padding(top = 16.dp, bottom = 4.dp)
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.background)
+                        .padding(top = 12.dp, bottom = 6.dp)
                 )
             }
             itemsIndexed(dayTransactions, key = { _, t -> t.id }) { index, transaction ->
@@ -623,12 +715,14 @@ private fun TransactionRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = transaction.label,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Medium
-            )
-            Text(text = time, fontSize = 13.sp, color = quietText)
+            // The name is optional. Without one, the time is shown larger on its own, which centers it
+            // vertically in the row (the row centers whatever is in this column).
+            if (transaction.label.isBlank()) {
+                Text(text = time, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+            } else {
+                Text(text = transaction.label, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+                Text(text = time, fontSize = 13.sp, color = quietText)
+            }
         }
         Text(
             text = "-${currency.format(transaction.amount)}",
@@ -658,7 +752,8 @@ fun TransactionDialog(
     var label by remember { mutableStateOf(initialLabel) }
     var amountText by remember { mutableStateOf(initialAmount) }
     val amount = amountText.toDoubleOrNull()
-    val canSave = label.isNotBlank() && amount != null && amount > 0
+    // Only the amount is required. The name is optional.
+    val canSave = amount != null && amount > 0
     val quietText = MaterialTheme.colorScheme.onSurfaceVariant
     val focusRequester = remember { FocusRequester() }
 
@@ -708,13 +803,13 @@ fun TransactionDialog(
                 OutlinedTextField(
                     value = label,
                     onValueChange = { label = it },
-                    placeholder = { Text("What was it for?") },
+                    placeholder = { Text("What was it for? (optional)") },
 
                     singleLine = true,
                     shape = RoundedCornerShape(50),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = {
-                        if (canSave) onConfirm(label, amount!!)
+                        if (canSave) onConfirm(label.trim(), amount!!)
                     }),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -724,7 +819,7 @@ fun TransactionDialog(
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Button(
-                    onClick = { if (canSave) onConfirm(label, amount!!) },
+                    onClick = { if (canSave) onConfirm(label.trim(), amount!!) },
                     enabled = canSave,
                     shape = RoundedCornerShape(50),
                     modifier = Modifier
@@ -741,12 +836,11 @@ fun TransactionDialog(
     }
 }
 
-// Turns the saved budget back into text for the amount field: 0 -> "", 50.0 -> "50", 12.5 -> "12.5".
-internal fun formatAmountForEditing(amount: Double): String = when {
-    amount <= 0.0 -> ""
-    amount % 1.0 == 0.0 -> amount.toLong().toString()
-    else -> amount.toString()
-}
+// Turns the saved budget back into text for the amount field, rounded to cents:
+// 0 -> "", 50.0 -> "50", 12.5 -> "12.5", 14.2857 -> "14.29".
+internal fun formatAmountForEditing(amount: Double): String =
+    if (amount <= 0.0) ""
+    else BigDecimal.valueOf(amount).setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
 
 /**
  * A single-line Text that shrinks its font size until it fits the available width,

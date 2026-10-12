@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- One cell tall, any width: resizeMode is horizontal only. -->
+<!-- One cell tall, any width: resizeMode is horizontal only (compact and minimal). -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="110dp"
     android:minHeight="40dp"

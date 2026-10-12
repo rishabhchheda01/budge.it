@@ -1,17 +1,21 @@
 package com.rishabh.budgetapp.widget
 
+import android.appwidget.AppWidgetManager
 import android.content.Context
+import android.content.res.Configuration
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.coerceIn
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
+import androidx.glance.LocalContext
 import androidx.glance.LocalSize
 import androidx.glance.action.actionStartActivity
 import androidx.glance.action.clickable
@@ -26,6 +30,7 @@ import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
+import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
@@ -43,11 +48,10 @@ import com.rishabh.budgetapp.currencyFormat
 import com.rishabh.budgetapp.data.BudgetPreferences
 import com.rishabh.budgetapp.data.TransactionRepository
 import com.rishabh.budgetapp.summaryFlow
-import com.rishabh.budgetapp.ui.theme.WidgetBackground
-import com.rishabh.budgetapp.ui.theme.WidgetQuietText
-import com.rishabh.budgetapp.ui.theme.WidgetText
-import com.rishabh.budgetapp.ui.theme.WidgetTrack
+import com.rishabh.budgetapp.ui.theme.WidgetColors
+import com.rishabh.budgetapp.ui.theme.fillColorOn
 import com.rishabh.budgetapp.ui.theme.progressColor
+import com.rishabh.budgetapp.ui.theme.widgetColorsFor
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -61,36 +65,20 @@ import java.time.ZonedDateTime
 // progress bar along the bottom (with some space around it).
 
 // Same color in light and dark mode, so the widget always looks the same.
-// Colors come from ui/theme/Theme.kt.
+// The background is picked in Settings; the other colors are worked out from it (ui/theme/Theme.kt).
 private fun fixed(color: Color) = ColorProvider(day = color, night = color)
 
-private val BackgroundColor = fixed(WidgetBackground)
-private val TextColor = fixed(WidgetText)
-private val QuietColor = fixed(WidgetQuietText)
-private val TrackColor = fixed(WidgetTrack)
-
-// Every launcher draws a "one cell" widget at a different height, so sizes scale with the
-// widget's real height. These are the rules (change the numbers to taste):
-private const val NUMBER_SHARE = 0.34f    // the number's size, as a share of the widget height (in sp)
-private const val NumberMin = 20f         // smallest and biggest number size, in sp
-private const val NumberMax = 40f
-private const val BUTTON_SHARE = 0.34f    // the "+" circle's size, as a share of the widget height
-private val ButtonMin = 30.dp
-private val ButtonMax = 44.dp
-private const val PLUS_SHARE = 0.55f      // the "+" sign's length, as a share of the circle
-private val PlusThickness = 2.dp          // how thin the "+" lines are
-private const val BAR_SHARE = 0.10f       // the progress bar's thickness, as a share of the height
-private val BarMin = 6.dp
-private val BarMax = 12.dp
-private val SidePadding = 16.dp           // space left and right of the content and the bar
-private val BarBottomPadding = 6.dp       // space between the bar and the bottom edge (was 12)
-private val LabelSize = 10.sp             // the small "left today" text (was 12)
+// Sizes are worked out from the widget's real size in widget/WidgetLayout.kt (change the rules there).
 
 class BudgetWidget : GlanceAppWidget() {
     // Exact = the layout can ask for the widget's real size (LocalSize) and scale to it.
     override val sizeMode = SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
+        // Make sure the midnight refresh is set up. This runs when the widget is first added and on every update.
+        // If it fails, the widget must still be drawn, so the error is ignored.
+        runCatching { MidnightRefresh.schedule(context) }
+
         // The widget WATCHES the data (budget settings and transactions). Whenever anything changes,
         // it redraws by itself. Reading the data only once here would leave the widget showing old
         // numbers whenever Android reuses it instead of starting it fresh.
@@ -99,11 +87,30 @@ class BudgetWidget : GlanceAppWidget() {
 
         provideContent {
             val state by states.collectAsState(initial = firstState)
-            WidgetContent(isBudgetSet = state.isBudgetSet, summary = state.summary)
+            WidgetContent(
+                isBudgetSet = state.isBudgetSet,
+                summary = state.summary,
+                colors = widgetColorsFor(state.background)
+            )
         }
     }
 
     companion object {
+        /**
+         * The size (in dp) the first widget on the home screen is really drawn at on this phone, or null if
+         * there is no widget. The color screen uses it so its look-alike is exactly the same size.
+         * Portrait uses the minimum width and the maximum height, which is what the widget itself uses.
+         */
+        suspend fun currentSize(context: Context): DpSize? {
+            val manager = GlanceAppWidgetManager(context)
+            val glanceId = manager.getGlanceIds(BudgetWidget::class.java).firstOrNull() ?: return null
+            val options = AppWidgetManager.getInstance(context).getAppWidgetOptions(manager.getAppWidgetId(glanceId))
+            val landscape = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+            val width = options.getInt(if (landscape) AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH else AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
+            val height = options.getInt(if (landscape) AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT else AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT)
+            return if (width > 0 && height > 0) DpSize(width.dp, height.dp) else null
+        }
+
         suspend fun refreshAll(context: Context) {
             val widget = BudgetWidget()
             val manager = GlanceAppWidgetManager(context)
@@ -113,19 +120,20 @@ class BudgetWidget : GlanceAppWidget() {
     }
 }
 
-private data class WidgetState(val isBudgetSet: Boolean, val summary: BudgetSummary)
+internal data class WidgetState(val isBudgetSet: Boolean, val summary: BudgetSummary, val background: Color)
 
 // The saved settings the widget depends on, bundled so they can travel together.
 private data class Settings(
     val period: BudgetPeriod,
     val amount: Double,
     val isSet: Boolean,
-    val rollover: java.time.LocalTime
+    val rollover: java.time.LocalTime,
+    val background: Color
 )
 
 /** Emits a new state every time the budget settings or the transactions change. */
 @OptIn(ExperimentalCoroutinesApi::class)
-private fun widgetStates(context: Context): Flow<WidgetState> {
+internal fun widgetStates(context: Context): Flow<WidgetState> {
     val preferences = BudgetPreferences(context)
     val repository = TransactionRepository(context)
 
@@ -133,51 +141,60 @@ private fun widgetStates(context: Context): Flow<WidgetState> {
         preferences.budgetPeriod,
         preferences.budgetAmount,
         preferences.isBudgetSet,
-        preferences.rolloverTime
-    ) { period, amount, isSet, rollover -> Settings(period, amount, isSet, rollover) }
+        preferences.rolloverTime,
+        preferences.widgetColor
+    ) { period, amount, isSet, rollover, background -> Settings(period, amount, isSet, rollover, background) }
         .flatMapLatest { settings ->
             val today = budgetDate(ZonedDateTime.now(), settings.rollover)
             repository.summaryFlow(settings.period, settings.amount, today, settings.rollover)
-                .map { summary -> WidgetState(settings.isSet, summary) }
+                .map { summary -> WidgetState(settings.isSet, summary, settings.background) }
         }
 }
 
 @Composable
-private fun WidgetContent(isBudgetSet: Boolean, summary: BudgetSummary) {
+private fun WidgetContent(isBudgetSet: Boolean, summary: BudgetSummary, colors: WidgetColors) {
+    val backgroundColor = fixed(colors.background)
+    val textColor = fixed(colors.text)
+    val quietColor = fixed(colors.quietText)
     val left = currencyFormat().format(summary.left)
+    val weeklyLeft = currencyFormat().format(summary.weeklyLeft)
 
-    // Work out sizes from the widget's real size.
+    // Work out every size from the widget's real size, so nothing overlaps (see widget/WidgetLayout.kt).
     val size = LocalSize.current
-    val buttonSize = (size.height * BUTTON_SHARE).coerceIn(ButtonMin, ButtonMax)
-    val numberSize = (size.height.value * NUMBER_SHARE).coerceIn(NumberMin, NumberMax).sp
-    val barHeight = (size.height * BAR_SHARE).coerceIn(BarMin, BarMax)
+    val sizes = widgetSizes(size.width.value, size.height.value, left.length)
+    // Text sizes are in sp, which grows with the phone's "font size" setting, but the layout is in dp.
+    // Dividing by the font scale keeps the text the size we worked out, so big-text users get no overlap.
+    val fontScale = LocalContext.current.resources.configuration.fontScale
+    fun textSize(dp: Float) = (dp / fontScale).sp
 
     Column(
         modifier = GlanceModifier
             .fillMaxSize()
-            .background(BackgroundColor)
+            .background(backgroundColor)
             .cornerRadius(24.dp)
             .clickable(actionStartActivity<MainActivity>()) // tap anywhere to open the app
     ) {
-        // Top: "remaining" and the number on the left, the "+" button on the right.
+        // Top: the number ("left today") on the left, the "+" button on the right.
         Row(
             modifier = GlanceModifier
                 .fillMaxWidth()
                 .defaultWeight()
-                .padding(start = SidePadding, end = 12.dp, top = 8.dp),
+                // The bottom padding here IS the clear gap above the progress bar.
+                .padding(
+                    start = SidePadding,
+                    end = EndPadding,
+                    top = sizes.topPadding.dp,
+                    bottom = if (isBudgetSet) CONTENT_BAR_GAP.dp else 0.dp
+                ),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = GlanceModifier.defaultWeight()) {
                 if (isBudgetSet) {
                     Text(
-                        text = "left today",
-                        style = TextStyle(color = QuietColor, fontSize = LabelSize)
-                    )
-                    Text(
                         text = left,
                         style = TextStyle(
-                            color = TextColor,
-                            fontSize = heroSize(left, numberSize, numberSize * 0.7f),
+                            color = textColor,
+                            fontSize = textSize(sizes.number),
                             fontWeight = FontWeight.Medium
                         ),
                         maxLines = 1
@@ -185,49 +202,71 @@ private fun WidgetContent(isBudgetSet: Boolean, summary: BudgetSummary) {
                 } else {
                     Text(
                         text = "Set your budget",
-                        style = TextStyle(color = TextColor, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                        style = TextStyle(color = textColor, fontSize = 16.sp, fontWeight = FontWeight.Medium)
                     )
                 }
             }
-            if (isBudgetSet) AddButton(buttonSize)
+            if (isBudgetSet) AddButton(sizes.button.dp, colors)
         }
 
-        // Bottom: a pill-shaped progress bar with space around it.
+        // Bottom: two pill-shaped progress bars with space around them. The daily bar is on top, the weekly one
+        // underneath, each with its label above it when the widget is tall enough (see WidgetLayout.kt).
         if (isBudgetSet) {
-            Box(
+            val barWidth = size.width - SidePadding * 2
+            Column(
                 modifier = GlanceModifier
                     .fillMaxWidth()
-                    .padding(start = SidePadding, end = SidePadding, bottom = BarBottomPadding)
+                    .padding(start = SidePadding, end = SidePadding, bottom = sizes.bottomPadding.dp)
             ) {
-                ProgressPill(
-                    progress = summary.progress,
-                    width = size.width - SidePadding * 2,
-                    height = barHeight
-                )
+                sizes.label?.let { labelSize ->
+                    Text(
+                        text = "left today",
+                        style = TextStyle(color = quietColor, fontSize = textSize(labelSize))
+                    )
+                }
+                ProgressPill(progress = summary.progress, width = barWidth, height = sizes.bar.dp, colors = colors)
+                Spacer(modifier = GlanceModifier.height(BAR_GAP.dp))
+                sizes.label?.let { labelSize ->
+                    // "left this week" on the left, and what is left of the week on the right.
+                    Row(modifier = GlanceModifier.fillMaxWidth()) {
+                        Text(
+                            text = "left this week",
+                            style = TextStyle(color = quietColor, fontSize = textSize(labelSize)),
+                            modifier = GlanceModifier.defaultWeight()
+                        )
+                        Text(
+                            text = weeklyLeft,
+                            style = TextStyle(
+                                color = textColor,
+                                fontSize = textSize(labelSize),
+                                fontWeight = FontWeight.Medium
+                            ),
+                            maxLines = 1
+                        )
+                    }
+                }
+                ProgressPill(progress = summary.weeklyProgress, width = barWidth, height = sizes.bar.dp, colors = colors)
             }
         }
     }
 }
 
-// Long amounts (like -$1,234.56) get a smaller size so they still fit on one line.
-private fun heroSize(text: String, normal: TextUnit, small: TextUnit) =
-    if (text.length > 8) small else normal
-
-/** A long pill: a light track with a colored fill (green -> amber -> red) on top. */
+/** A long pill: a track with a colored fill (green -> amber -> red) on top. */
 @Composable
-private fun ProgressPill(progress: Float, width: Dp, height: Dp) {
+private fun ProgressPill(progress: Float, width: Dp, height: Dp, colors: WidgetColors) {
     Box(
         modifier = GlanceModifier
             .fillMaxWidth()
             .height(height)
-            .background(TrackColor)
+            .background(fixed(colors.track))
             .cornerRadius(height / 2)
     ) {
         if (progress > 0f) {
             // Glance can't do "fill 40% of the width", so work out the fill width in dp ourselves.
             // It is never narrower than the bar is tall, so a tiny fill still looks like a pill.
             val fillWidth = maxOf(width * progress, height)
-            val fillColor = progressColor(progress)
+            // The fill color is adjusted when it would blend into the widget's background.
+            val fillColor = fillColorOn(progressColor(progress), colors.background)
             Box(
                 modifier = GlanceModifier
                     .width(fillWidth)
@@ -241,14 +280,14 @@ private fun ProgressPill(progress: Float, width: Dp, height: Dp) {
 
 /** The round "+" button: black, like the Add button in the app. It opens a floating add card. */
 @Composable
-private fun AddButton(size: Dp) {
+private fun AddButton(size: Dp, colors: WidgetColors) {
     val plusLength = size * PLUS_SHARE
 
     Box(
         contentAlignment = Alignment.Center,
         modifier = GlanceModifier
             .size(size)
-            .background(TextColor)
+            .background(fixed(colors.text))
             .cornerRadius(size / 2)
             .clickable(actionStartActivity<QuickAddActivity>())
     ) {
@@ -257,14 +296,14 @@ private fun AddButton(size: Dp) {
             modifier = GlanceModifier
                 .width(plusLength)
                 .height(PlusThickness)
-                .background(BackgroundColor)
+                .background(fixed(colors.background))
                 .cornerRadius(PlusThickness / 2)
         ) {}
         Box(
             modifier = GlanceModifier
                 .width(PlusThickness)
                 .height(plusLength)
-                .background(BackgroundColor)
+                .background(fixed(colors.background))
                 .cornerRadius(PlusThickness / 2)
         ) {}
     }

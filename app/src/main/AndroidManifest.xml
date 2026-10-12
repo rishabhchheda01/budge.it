@@ -33,6 +33,12 @@
             android:taskAffinity=""
             android:theme="@style/Theme.BudgetApp.Translucent" />
 
+        <!-- Opened from Settings: pick the widget color over your wallpaper. -->
+        <activity
+            android:name=".ui.ColorPickerActivity"
+            android:exported="false"
+            android:theme="@style/Theme.BudgetApp.Wallpaper" />
+
         <receiver
             android:name=".widget.BudgetWidgetReceiver"
             android:exported="false">

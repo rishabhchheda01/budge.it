@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.rishabh.budgetapp.data.BudgetPreferences
 import com.rishabh.budgetapp.data.Transaction
 import com.rishabh.budgetapp.data.TransactionRepository
+import com.rishabh.budgetapp.ui.theme.WidgetBackground
 import com.rishabh.budgetapp.widget.BudgetWidget
 import com.rishabh.budgetapp.widget.MidnightRefresh
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -69,6 +70,9 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
     val themeMode = preferences.themeMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.SYSTEM)
 
+    val widgetColor = preferences.widgetColor
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), WidgetBackground)
+
     val transactions = transactionRepository.getAll()
         .stateIn<List<Transaction>?>(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
@@ -80,7 +84,7 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
     }.stateIn<BudgetSummary?>(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     init {
-        // Runs on app open and whenever the date changes: delete transactions older than last week.
+        // Runs on app open and whenever the date changes: delete transactions older than one month.
         viewModelScope.launch {
             today.collect { (rolloverTime, date) ->
                 transactionRepository.deleteOlderThan(pruneCutoffMillis(date, rollover = rolloverTime))
@@ -108,6 +112,14 @@ class BudgetViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             preferences.setRolloverTime(time)
             MidnightRefresh.scheduleIfWidgetExists(getApplication())
+            BudgetWidget.refreshAll(getApplication())
+        }
+    }
+
+    // Daily <-> Weekly in Settings: saves the new period together with the converted amount.
+    fun switchBudgetPeriod(period: BudgetPeriod, amount: Double) {
+        viewModelScope.launch {
+            preferences.setPeriodAndAmount(period, amount)
             BudgetWidget.refreshAll(getApplication())
         }
     }

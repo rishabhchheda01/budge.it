@@ -61,9 +61,9 @@ class RolloverTest {
     }
 
     @Test
-    fun pruneCutoffIsLastSundayAtTheRolloverTime() {
-        val lastSunday = LocalDate.of(2026, 9, 27)
-        val expected = ZonedDateTime.of(lastSunday, fiveAm, utc).toInstant().toEpochMilli()
+    fun pruneCutoffIsOneMonthAgoAtTheRolloverTime() {
+        val oneMonthAgo = LocalDate.of(2026, 9, 6) // tuesday is Oct 6
+        val expected = ZonedDateTime.of(oneMonthAgo, fiveAm, utc).toInstant().toEpochMilli()
         assertEquals(expected, pruneCutoffMillis(tuesday, utc, fiveAm))
     }
 

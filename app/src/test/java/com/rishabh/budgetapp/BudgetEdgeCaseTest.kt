@@ -71,10 +71,10 @@ class BudgetEdgeCaseTest {
     }
 
     @Test
-    fun pruneCutoffKeepsExactlyThisWeekAndLastWeekEvenAcrossADaylightSavingChange() {
-        // Today is Monday Mar 9, so this week started Sunday Mar 8 and last week Sunday Mar 1.
+    fun pruneCutoffIsMidnightOneMonthAgoEvenWhenTheClocksChangeInBetween() {
+        // Today is Mar 9; the clocks changed on Mar 8. One month back is Feb 9, at midnight New York time.
         val cutoff = Instant.ofEpochMilli(pruneCutoffMillis(LocalDate.of(2026, 3, 9), newYork)).atZone(newYork)
-        assertEquals(LocalDate.of(2026, 3, 1).atStartOfDay(newYork), cutoff)
+        assertEquals(LocalDate.of(2026, 2, 9).atStartOfDay(newYork), cutoff)
     }
 
     // ---------- summary edge cases ----------

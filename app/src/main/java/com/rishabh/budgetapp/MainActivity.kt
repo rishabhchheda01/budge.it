@@ -1,5 +1,6 @@
 package com.rishabh.budgetapp
 
+import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -18,7 +19,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import com.rishabh.budgetapp.ui.BatterySaverDialog
+import com.rishabh.budgetapp.ui.ColorPickerActivity
 import com.rishabh.budgetapp.ui.MainScreen
 import com.rishabh.budgetapp.ui.needsBatteryExemption
 import com.rishabh.budgetapp.ui.requestBatteryExemption
@@ -85,6 +88,8 @@ private fun BudgetApp(viewModel: BudgetViewModel) {
     val summary by viewModel.summary.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState()
     val rollover by viewModel.rollover.collectAsState()
+    val widgetColor by viewModel.widgetColor.collectAsState()
+    val context = LocalContext.current
 
     // Wait until everything has loaded (all three are null until then): draw nothing, not the wrong screen.
     val loadedIsBudgetSet = isBudgetSet
@@ -111,6 +116,9 @@ private fun BudgetApp(viewModel: BudgetViewModel) {
         onThemeModeChange = { viewModel.setThemeMode(it) },
         onClearTransactions = { viewModel.clearTransactions() },
         rollover = rollover,
-        onRolloverChange = { viewModel.setRolloverTime(it) }
+        onRolloverChange = { viewModel.setRolloverTime(it) },
+        onSwitchBudgetPeriod = { period, amount -> viewModel.switchBudgetPeriod(period, amount) },
+        widgetColor = widgetColor,
+        onEditWidgetColor = { context.startActivity(Intent(context, ColorPickerActivity::class.java)) }
     )
 }
